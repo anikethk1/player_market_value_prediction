@@ -106,7 +106,11 @@ theme_set(theme_minimal(base_size = 12))
 
 ```{r load-data}
 # Load datasets - UPDATE PATHS AS NEEDED
-stats_data <- read_csv("all_leagues_stats.csv", show_col_types = FALSE)
+stats_data <- read_csv(
+  "all_leagues_stats.csv",
+  col_types = cols(Age = col_character()),
+  show_col_types = FALSE
+)
 market_data <- read_csv("market_values.csv", show_col_types = FALSE)
 
 cat("Performance Statistics Dataset:\n")
@@ -217,7 +221,8 @@ model_df <- merged %>%
     log_market_value = log1p(market_value_m),
     
     # Demographics
-    age = coalesce(player_age, Age),
+    # FBref age can be recorded as years-days (for example, "25-081").
+    age = coalesce(player_age, parse_number(Age)),
     
     # Playing time
     minutes = Min_Playing,
@@ -646,7 +651,10 @@ xgb_cv <- xgb.cv(
   verbose = 0
 )
 
-best_rounds <- xgb_cv$best_iteration
+# Use the evaluation log, which is available across XGBoost R versions.
+best_rounds <- xgb_cv$evaluation_log$iter[
+  which.min(xgb_cv$evaluation_log$test_rmse_mean)
+]
 cat("Optimal number of rounds:", best_rounds, "\n")
 
 # Train final model
@@ -701,9 +709,11 @@ comparison <- data.frame(
   `RMSE (€M)` = c(lm_results$test_rmse_original, glmnet_results$test_rmse_original,
                   rf_results$test_rmse_original, xgb_results$test_rmse_original),
   `R-Squared` = c(lm_results$test_r2, glmnet_results$test_r2, 
-                  rf_results$test_r2, xgb_results$test_r2)
+                  rf_results$test_r2, xgb_results$test_r2),
+  check.names = FALSE
 ) %>%
-  mutate(across(where(is.numeric), ~ round(., 4)))
+  mutate(across(where(is.numeric), ~ round(., 4))) %>%
+  arrange(`RMSE (Log)`)
 
 comparison %>%
   arrange(`RMSE (Log)`) %>%
